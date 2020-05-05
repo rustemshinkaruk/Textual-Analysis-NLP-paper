@@ -1,0 +1,604 @@
+
+  ```{r,eval=TRUE,echo=FALSE}
+library(data.table)
+library(jsonlite)
+library(tidytext)
+library(dplyr)
+library(tidyverse)
+library(tm)
+library(stringr)
+library(readxl)
+library(textdata)
+library(class)
+library(gmodels)
+library(ggplot2)
+rev=as.data.table(fread("C:\\Users\\Rustem\\Desktop\\afp 2\\data.csv"))#reviews
+products=as.data.table(fread("C:\\Users\\Rustem\\Desktop\\afp 2\\products.csv"))#products
+comp=as.data.table(fread("C:\\Users\\Rustem\\Desktop\\afp 2\\companylist1.csv"))#company list
+
+products=products[products$asin %in% unique(rev$asin),]#choose products only for which we have reviews
+
+
+```
+
+
+
+
+```{r,eval=TRUE,echo=FALSE}
+titles<-removePunctuation(products$title)#create vector of titles
+titles <- tolower(titles)
+complementary=!is.na(titles) 
+titles=titles[complementary]#remove na titles
+george<- as.data.table(read_excel("C:\\Users\\Rustem\\Desktop\\afp 2\\compared.xlsx",sheet = 1))
+data3=george$text
+
+#create vector with products asin numbers
+prodAsin=products$asin
+prodAsin=prodAsin[complementary]
+
+#create datatable to fill in later
+df=data.table(data3)
+setnames(df,c("name"))
+
+#create vector to hold number of products traded for each company
+num_products<- vector("numeric",length(data3))
+
+#
+index_place=list()
+asin_list=list()
+
+for(i in 1:length(data3)){
+  num_products[i]=sum(str_detect(titles,pattern=data3[i]))
+  dd=which(str_detect(titles,pattern=data3[i])==TRUE)
+  if(length(dd)!=0){
+    index_place[[i]]=dd
+    asin_list[[i]]=prodAsin[dd]
+  }else{
+    index_place[[i]]=0
+    asin_list[[i]]=0
+  }
+  #print(i)
+}
+
+df[,num_products:=num_products,]
+df[,index_place:=index_place,]
+df[,asin_list:=asin_list,]
+
+main=df[num_products!=0]
+main=main[,.(name,asin_list)]
+#vectorize asin_list column, make it one string separated by space 
+main[,asin:=0,]
+for(i in 1:length(main$name)){
+  main$asin[i]=paste(unlist(main$asin_list[i]),collapse=" ")
+}
+
+main[,asin_list:=NULL,]
+setnames(main,c("name","asin_vec"))
+
+#now use unnest_token to make the data tidy
+
+tidy_data <- main%>%
+  unnest_tokens(asin_num,asin_vec)
+
+tidy_data$asin_num=toupper(tidy_data$asin_num)
+
+
+#write.csv(tidy_data,"C:\\Users\\Rustem\\Desktop\\afp 2\\tidy_data.csv", row.names = FALSE)
+tidy_data=as.data.table(fread("C:\\Users\\Rustem\\Desktop\\afp 2\\tidy_data.csv"))
+```
+
+
+
+
+After including brand the imrpovement is 480 more mathces (2.1%) 
+
+
+```{r,eval=TRUE,echo=FALSE}
+#============================================================================
+#Include brand to your mapping process
+#============================================================================
+#============================================================================
+george<- as.data.table(read_excel("C:\\Users\\Rustem\\Desktop\\afp 2\\compared.xlsx",sheet = 1))
+data3=george$text
+brand <- removePunctuation(products$brand)
+brand <- tolower(brand)
+titles<-removePunctuation(products$title)#create vector of titles
+titles <- tolower(titles)
+
+temp_dt=data.table(titles,brand)
+temp_dt=temp_dt[-which(is.na(titles) & is.na(brand)),]
+
+temp_dt[,title_brand:=ifelse((!is.na(titles) & !is.na(brand)),paste(titles,brand),ifelse(!is.na(titles),titles,brand))]
+
+
+titles_brand=temp_dt$title_brand
+complementary=!is.na(titles_brand) 
+
+#create vector with products asin numbers
+prodAsin=products$asin
+prodAsin=prodAsin[complementary]
+
+#create datatable to fill in later
+df=data.table(data3)
+setnames(df,c("name"))
+
+#create vector to hold number of products traded for each company
+num_products<- vector("numeric",length(data3))
+
+#
+index_place=list()
+asin_list=list()
+
+for(i in 1:length(data3)){
+  num_products[i]=sum(str_detect(titles_brand,pattern=fixed(data3[i])))
+  dd=which(str_detect(titles_brand,pattern=data3[i])==TRUE)
+  if(length(dd)!=0){
+    index_place[[i]]=dd
+    asin_list[[i]]=prodAsin[dd]
+  }else{
+    index_place[[i]]=0
+    asin_list[[i]]=0
+  }
+  #print(i)
+}
+#============================================================================
+#============================================================================
+df[,num_products:=num_products,]
+df[,index_place:=index_place,]
+df[,asin_list:=asin_list,]
+
+main=df[num_products!=0]
+main=main[,.(name,asin_list)]
+#vectorize asin_list column, make it one string separated by space 
+main[,asin:=0,]
+for(i in 1:length(main$name)){
+  main$asin[i]=paste(unlist(main$asin_list[i]),collapse=" ")
+}
+
+main[,asin_list:=NULL,]
+setnames(main,c("name","asin_vec"))
+
+#now use unnest_token to make the data tidy
+
+tidy_data <- main%>%
+  unnest_tokens(asin_num,asin_vec)
+
+tidy_data$asin_num=toupper(tidy_data$asin_num)
+
+
+#write.csv(tidy_data,"C:\\Users\\Rustem\\Desktop\\afp 2\\tidy_data.csv", row.names = FALSE)
+tidy_data=as.data.table(fread("C:\\Users\\Rustem\\Desktop\\afp 2\\tidy_data.csv"))
+```
+
+Now I want to do some Explanatory data analysis. I want to show if the most frequent brands are in the company list. If not then we should include them if they are publicly traded.
+
+```{r,eval=TRUE,echo=FALSE}
+dt=data.table(products$brand)
+dt=na.omit(dt)
+setnames(dt,c("brand"))
+
+x=dt%>%
+  count(brand)%>%
+  arrange(desc(n))
+
+x=as.data.table(x)
+x$brand=tolower(x$brand)
+```
+We observed the most traded companies ( of products that have identified brand (i.e. not NA))
+
+Now we can see how our company list matches with this brand list
+
+```{r,eval=TRUE,echo=FALSE}
+
+
+
+num_products<- vector("numeric",length(data3))
+for(i in 1:length(data3)){
+  num_products[i]=sum(str_detect(x$brand,pattern=data3[i]))
+  #print(i)
+}
+
+x[,one_if_matched:=0]
+for(i in 1:length(x$brand)){
+  x$one_if_matched[i]=sum(str_detect(data3,pattern=x$brand[i]))
+}
+
+#write.csv(x,"C:\\Users\\Rustem\\Desktop\\afp 2\\abdul_task.csv", row.names = FALSE)
+
+words_count <- x[n>200,]%>%
+  mutate(brand2=fct_reorder(brand,n))
+ggplot(words_count,aes(x=brand2,y=n))+geom_col()+coord_flip()+ggtitle("Most tradable companies")
+
+
+
+
+```
+
+
+
+
+
+
+
+
+Sentiment Analysis: (polarity approach)
+```{r,eval=TRUE,echo=FALSE}
+# 
+# #install.packages("qdap")
+# library(qdapRegex)
+# library(qdapDictionaries)
+# #install.packages("rJava")
+# library(rJava)
+# #Sys.setenv(JAVA_HOME="C:\\Program Files\\Java\\jre1.8.0_221") # for 32-bit version
+# library(qdap)
+# cleaned_reviews=as.data.table(fread("C:\\Users\\Rustem\\Desktop\\afp 2\\cleaned_reviews.csv"))
+# 
+# 
+# pol <- polarity(cleaned_reviews$text)
+# #pol$all
+# pol_df=cbind(cleaned_reviews,pol$all)
+# pol_df[,all:=NULL]
+# backup=copy(pol_df)
+# pol_df[,pos.words:=NULL]
+# pol_df[,neg.words:=NULL]
+#write.csv(pol_df,"C:\\Users\\Rustem\\Desktop\\afp 2\\pol_df.csv", row.names = FALSE)
+pol_df=as.data.table(fread("C:\\Users\\Rustem\\Desktop\\afp 2\\pol_df.csv"))
+pol_df[,text.var:=NULL]
+
+row.names(pol_df)=1:length(pol_df$asin)
+setorderv(pol_df,c("asin","time"))
+tidy_data=as.data.table(fread("C:\\Users\\Rustem\\Desktop\\afp 2\\tidy_data.csv"))
+
+tidy_data[,time_vec:=0,]
+tidy_data[,sentiment_vec:=0,]
+
+for(i in 1:length(tidy_data$asin_num)){
+  aa=pol_df[asin==tidy_data$asin_num[i],]
+  l1=list(aa$time,aa$polarity)
+  tidy_data$time_vec[i]=l1[1]
+  tidy_data$sentiment_vec[i]=l1[2]
+  if(i%%250==0){
+    print(i)
+  }
+}
+
+
+
+
+final=data.table()
+final[,company_name:=unique(tidy_data$name),]
+final[,time_vec:=0,]
+final[,pos_vec:=0,]
+final[,neg_vec:=0,]
+for(i in 1:length(final$company_name)){
+  aa=tidy_data[name==final$company_name[i],]
+  master_dt=data.table()
+  for(j in 1:length(which(tidy_data$name==final$company_name[i]))){
+    dt1=data.table(unlist(aa$time_vec[j]),unlist(aa$sentiment_vec[j]))
+    dt1[,pos:=ifelse(V2>=0,V2,0)]
+    dt1[,neg:=ifelse(V2<=0,V2,0)]
+    dt1[,V2:=NULL]
+    master_dt=rbind(master_dt,dt1)
+  }
+  x=master_dt%>%
+    group_by(V1)%>%
+    summarize(pos=sum(pos),neg=sum(neg))
+  l1=list(x$V1,x$pos,x$neg)
+  final$time_vec[i]=l1[1]
+  final$pos_vec[i]=l1[2]
+  final$neg_vec[i]=l1[3]
+  print(i)
+}
+
+```
+
+
+Apple case: stock return (POLARITY APPROACH)
+VERY IMPORTANT TO NOTE THAT i DEFINED QUARTERS IN A DIFFERENT WAY THAN IT IS DIFIEND IN crsp . SO MY Q1 ==Q2 FROM CRSP
+```{r,eval=TRUE,echo=FALSE}
+apple=data.table(unlist(final$time_vec[1]),unlist(final$pos_vec[1]),unlist(final$neg_vec[1]))
+
+setnames(apple,c("time","pos","neg"))
+apple$time=as.Date(apple$time,format="%Y-%m-%d")
+apple$sum_pol=apple$pos+apple$neg
+
+apple[,year:=year(time)]
+apple[,month:=month(time)]
+apple[,quarter:=ifelse(month<=3,1,ifelse(month<=6,2,ifelse(month<=9,3,ifelse(month<=12,4,4))))]
+apple[,period:=paste(year,"Q",quarter,sep="")]
+apple[,year:=NULL]
+apple[,month:=NULL]
+apple[,quarter:=NULL]
+#write.csv(apple,"C:\\Users\\Rustem\\Desktop\\afp 2\\apple2.csv", row.names = FALSE)
+x=apple%>%
+  group_by(period)%>%
+  summarise(pos=sum(pos),neg=sum(neg))#VERY IMPORTANT TO NOTE THAT i DEFINED QUARTERS IN A DIFFERENT WAY THAN IT IS DIFIEND IN crsp . SO MY Q1 ==Q2 FROM CRSP
+x=as.data.table(x)
+
+x=x[21:50,]#subject to change
+x[,ratio:=abs(pos/neg)]
+
+fund=as.data.table(fread("C:\\Users\\Rustem\\Desktop\\afp 2\\fundamentals.csv"))
+fund$datadate=as.character(fund$datadate)
+fund$datadate=as.Date(fund$datadate,format="%Y%m%d")
+fund=fund[,.(datadate,fyearq,fqtr,rdq,niq,revtq,saleq,epsfxq)]
+fund[,quarter:=paste(fyearq,"Q",fqtr,sep="")]
+
+
+x$rev=fund$revtq
+x$date=fund$datadate
+
+#install.packages("plotrix")
+library(plotrix)
+
+
+twoord.plot(lx=x$date,ly=x$rev/1000,rx=x$date,ry=x$ratio,ylab
+            ="revenue in '000",rylab="ratio",xlab="date",main="Revenue vs Ratio")
+
+
+```
+
+
+
+Apple case: stock return
+```{r,eval=TRUE,echo=FALSE}
+apple=as.data.table(fread("C:\\Users\\Rustem\\Desktop\\afp 2\\apple.csv"))
+apple=apple[,.(date,vwretd),]
+apple$date=as.character(apple$date)
+apple$date=as.Date(apple$date,format="%Y%m%d")
+setnames(apple,c("time","ret"))
+
+time=as.Date(unlist(final$time_vec[1]),format="%Y-%m-%d")
+sentiment=unlist(final$sentiment_vec[1])
+apple_dt=data.table(time,sentiment)
+
+comb=merge(apple_dt,apple,all.x=TRUE)
+
+
+fund=as.data.table(fread("C:\\Users\\Rustem\\Desktop\\afp 2\\fundamentals.csv"))
+fund$datadate=as.character(fund$datadate)
+fund$datadate=as.Date(fund$datadate,format="%Y%m%d")
+fund=fund[,.(datadate,fyearq,fqtr,rdq,niq,revtq,saleq,epsfxq)]
+
+fund[,quarter:=paste(fyearq,"Q",fqtr,sep="")]
+
+apple_dt[,pos:=ifelse(sentiment>=0,sentiment,0)]
+apple_dt[,neg:=ifelse(sentiment<=0,abs(sentiment),0)]
+
+apple_dt[,year:=year(time)]
+apple_dt[,month:=month(time)]
+apple_dt[,quarter:=ifelse(month<=3,1,ifelse(month<=6,2,ifelse(month<=9,3,ifelse(month<=12,4,4))))]
+apple_dt[,period:=paste(year,"Q",quarter,sep="")]
+apple_dt[,year:=NULL]
+apple_dt[,month:=NULL]
+apple_dt[,quarter:=NULL]
+
+x=apple_dt%>%
+  group_by(period)%>%
+  summarise(pos=sum(pos),neg=sum(neg))
+x=as.data.table(x)
+x[,ratio:=pos/neg]
+setnames(x,c("quarter","pos","neg","ratio"))
+comb3=merge(fund,x,by="quarter")
+comb3=comb3[-length(comb3$quarter),]
+
+comb3[,norm_sales:=(saleq-min(saleq))/(max(saleq)-min(saleq))*(3-0)+0,]
+
+plot(comb3$datadate,comb3$ratio,type="b",col="red",ylim=c(0,4),main="Revenues vs Sentiment",ylab="normalized values",xlab="Quarters")
+lines(comb3$datadate,comb3$norm_sales)
+
+
+```
+
+
+
+
+
+
+Sentiment Analysis:
+  ```{r,eval=TRUE,echo=FALSE}
+#remove unncessary entries in reviews database
+cleaned_reviews=rev[rev$asin %in% unique(tidy_data$asin_num),]
+cleaned_reviews[,reviewerID:=NULL,]
+cleaned_reviews[,reviewerName:=NULL,]
+cleaned_reviews[,unixReviewTime:=NULL,]
+cleaned_reviews$reviewTime=as.Date(cleaned_reviews$reviewTime,format="%m %d, %Y")
+
+
+setnames(cleaned_reviews,c("asin","text","score","summary","time"))
+setorderv(cleaned_reviews,c("asin","time")) 
+
+cleaned_reviews[,sentiment_pos:=0,]
+cleaned_reviews[,sentiment_neg:=0,]
+
+#=============================================================
+#firsly let's remove all digits and punctuations from our text and make all lower letters
+#=============================================================
+cleaned_reviews$text=tolower(cleaned_reviews$text)
+cleaned_reviews$text=removePunctuation(cleaned_reviews$text)
+cleaned_reviews$text=removeNumbers(cleaned_reviews$text)
+cleaned_reviews$text=removeWords(cleaned_reviews$text,stopwords("english"))
+#remove empty reviews
+backup=copy(cleaned_reviews)
+cleaned_reviews=cleaned_reviews[-which(cleaned_reviews$text==""),]
+cleaned_reviews$text=stripWhitespace(cleaned_reviews$text)
+
+#now do the same with summary column
+cleaned_reviews$summary=tolower(cleaned_reviews$summary)
+cleaned_reviews$summary=removePunctuation(cleaned_reviews$summary)
+cleaned_reviews$summary=removeNumbers(cleaned_reviews$summary)
+cleaned_reviews$summary=removeWords(cleaned_reviews$summary,stopwords("english"))
+cleaned_reviews=cleaned_reviews[-which(cleaned_reviews$summary==""),]
+cleaned_reviews$summary=stripWhitespace(cleaned_reviews$summary)
+
+#=====================================================================
+#WE WILL NOT PERFORM STEMMING SINCE IT DOES NOT MAKE SENSE IN THIS CASE
+#=====================================================================
+library(textdata)
+a=get_sentiments("bing")
+
+positive=a[a$sentiment=="positive",]$word
+negative=a[a$sentiment=="negative",]$word
+negative=negative[-468]#strange words that cause error when we use str_detect
+negative=negative[-467]
+negative=negative[-1557]
+
+
+for(i in 1:length(positive)){
+  dd=which(str_detect(cleaned_reviews$text,pattern=positive[i])==TRUE)
+  if(length(dd)>=1){
+    cleaned_reviews$sentiment_pos[dd]=cleaned_reviews$sentiment_pos[dd]+1
+  }
+  if(i%%10==0){
+    print(i)
+  }
+}
+
+
+#write.csv(cleaned_reviews,"C:\\Users\\Rustem\\Desktop\\afp 2\\cleaned_reviews.csv", row.names = FALSE)
+
+for(i in 1:length(negative)){
+  dd=which(str_detect(cleaned_reviews$text,pattern=negative[i])==TRUE)
+  if(length(dd)>=1){
+    cleaned_reviews$sentiment_neg[dd]=cleaned_reviews$sentiment_neg[dd]+1
+  }
+  if(i%%10==0){
+    print(i)
+  }
+}
+
+
+#write.csv(cleaned_reviews,"C:\\Users\\Rustem\\Desktop\\afp 2\\cleaned_reviews.csv", row.names = FALSE)
+
+
+```
+
+
+
+```{r,eval=TRUE,echo=FALSE}
+
+cleaned_reviews=as.data.table(fread("C:\\Users\\Rustem\\Desktop\\afp 2\\cleaned_reviews.csv"))
+cleaned_reviews[,ratio:=sentiment_pos/sentiment_neg,]
+
+cleaned_reviews[,ratio:=ifelse(!is.infinite(ratio),ratio,2),]
+cleaned_reviews[,ratio:=ifelse(!is.nan(ratio),ratio,1),]
+
+cleaned_reviews[,score_factor:=ifelse(score>=4,"positive","negative"),]
+cleaned_reviews$score_factor=as.factor(cleaned_reviews$score_factor)
+
+y=cleaned_reviews[,.(score_factor),]
+x=cleaned_reviews[,.(ratio),]
+
+x$ratio=jitter(x$ratio,factor=0.001)
+
+cleaned_reviews[,naive_estimator:=ifelse(ratio>1,"positive","negative")]
+cleaned_reviews$naive_estimator=as.factor(cleaned_reviews$naive_estimator)
+
+my=data.frame(cleaned_reviews$naive_estimator,y$score_factor)
+names(my)=c("predicted","observed")
+head(my)
+
+#install.packages("gmodels")
+library(gmodels)
+CrossTable(x = my$observed, y = my$predicted, prop.chisq=FALSE, prop.c = FALSE, prop.r = FALSE, prop.t = FALSE)
+```
+
+
+
+
+```{r,eval=TRUE,echo=FALSE}
+row.names(cleaned_reviews)=1:length(cleaned_reviews$asin)
+setorderv(cleaned_reviews,c("asin","time"))
+cleaned_reviews[,naive_sent:=ifelse(naive_estimator=="positive",1,-1)]
+
+tidy_data[,time_vec:=0,]
+tidy_data[,sentiment_vec:=0,]
+
+for(i in 1:length(tidy_data$asin_num)){
+  aa=cleaned_reviews[asin==tidy_data$asin_num[i],]
+  l1=list(aa$time,aa$naive_sent)
+  tidy_data$time_vec[i]=l1[1]
+  tidy_data$sentiment_vec[i]=l1[2]
+  if(i%%250==0){
+    print(i)
+  }
+}
+
+
+
+
+final=data.table()
+final[,company_name:=unique(tidy_data$name),]
+final[,time_vec:=0,]
+final[,sentiment_vec:=0,]
+for(i in 1:length(final$company_name)){
+  aa=tidy_data[name==final$company_name[i],]
+  master_dt=data.table()
+  for(j in 1:length(which(tidy_data$name==final$company_name[i]))){
+    dt1=data.table(unlist(aa$time_vec[j]),unlist(aa$sentiment_vec[j]))
+    master_dt=rbind(master_dt,dt1)
+  }
+  x=master_dt%>%
+    group_by(V1)%>%
+    summarize(sum(V2))
+  l1=list(x$V1,x$`sum(V2)`)
+  final$time_vec[i]=l1[1]
+  final$sentiment_vec[i]=l1[2]
+  
+  print(i)
+}
+
+```
+
+
+
+Apple case: stock return
+```{r,eval=TRUE,echo=FALSE}
+apple=as.data.table(fread("C:\\Users\\Rustem\\Desktop\\afp 2\\apple.csv"))
+apple=apple[,.(date,vwretd),]
+apple$date=as.character(apple$date)
+apple$date=as.Date(apple$date,format="%Y%m%d")
+setnames(apple,c("time","ret"))
+
+time=as.Date(unlist(final$time_vec[1]),format="%Y-%m-%d")
+sentiment=unlist(final$sentiment_vec[1])
+apple_dt=data.table(time,sentiment)
+
+comb=merge(apple_dt,apple,all.x=TRUE)
+
+
+fund=as.data.table(fread("C:\\Users\\Rustem\\Desktop\\afp 2\\fundamentals.csv"))
+fund$datadate=as.character(fund$datadate)
+fund$datadate=as.Date(fund$datadate,format="%Y%m%d")
+fund=fund[,.(datadate,fyearq,fqtr,rdq,niq,revtq,saleq,epsfxq)]
+
+fund[,quarter:=paste(fyearq,"Q",fqtr,sep="")]
+
+apple_dt[,pos:=ifelse(sentiment>=0,sentiment,0)]
+apple_dt[,neg:=ifelse(sentiment<=0,abs(sentiment),0)]
+
+apple_dt[,year:=year(time)]
+apple_dt[,month:=month(time)]
+apple_dt[,quarter:=ifelse(month<=3,1,ifelse(month<=6,2,ifelse(month<=9,3,ifelse(month<=12,4,4))))]
+apple_dt[,period:=paste(year,"Q",quarter,sep="")]
+apple_dt[,year:=NULL]
+apple_dt[,month:=NULL]
+apple_dt[,quarter:=NULL]
+
+x=apple_dt%>%
+  group_by(period)%>%
+  summarise(pos=sum(pos),neg=sum(neg))
+x=as.data.table(x)
+x[,ratio:=pos/neg]
+setnames(x,c("quarter","pos","neg","ratio"))
+comb3=merge(fund,x,by="quarter")
+comb3=comb3[-length(comb3$quarter),]
+
+comb3[,norm_sales:=(saleq-min(saleq))/(max(saleq)-min(saleq))*(3-0)+0,]
+
+plot(comb3$datadate,comb3$ratio,type="b",col="red",ylim=c(0,4),main="Revenues vs Sentiment",ylab="normalized values",xlab="Quarters")
+lines(comb3$datadate,comb3$norm_sales)
+
+
+```
+
